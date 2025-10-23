@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Photo Enhancer</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'gemini-blue': '#4285F4',
+                        'gemini-dark': '#1F1F1F',
+                    },
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&display=swap');
+        .loading-dots div {
+            animation: bounce 0.6s infinite alternate;
+        }
+        .loading-dots div:nth-child(2) {
+            animation-delay: 0.2s;
+        }
+        .loading-dots div:nth-child(3) {
+            animation-delay: 0.4s;
+        }
+        @keyframes bounce {
+            from { transform: translateY(0); }
+            to { transform: translateY(-8px); }
+        }
+        .photo-frame {
+            min-height: 250px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            background-color: #f7f7f7;
+            border: 2px dashed #ccc;
+            background-size: cover;
+            background-position: center;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 min-h-screen p-4 sm:p-8 font-sans">
+
+    <div id="app" class="max-w-4xl mx-auto">
+        <header class="text-center mb-10">
+            <h1 class="text-4xl font-extrabold text-gemini-dark mb-2">📸 AI Photo Restorer</h1>
+            <p class="text-lg text-gray-600">Give your old or blurry memories a new life!</p>
+        </header>
+
+        <div class="bg-white p-6 sm:p-8 rounded-xl shadow-2xl border border-gray-100">
+            <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+
+                <!-- 1. Input Section (Original) -->
+                <section>
+                    <h2 class="text-xl font-semibold mb-3 text-gemini-dark">Original Photo</h2>
+                    
+                    <div id="original-photo-frame" class="photo-frame rounded-xl mb-4 transition-all duration-300">
+                        <span id="original-placeholder" class="text-gray-500 text-center p-4">
+                            Upload an image (JPG, PNG) to begin.
+                        </span>
+                        <img id="original-image-preview" class="hidden max-w-full max-h-[350px] rounded-lg shadow-md" alt="Original Photo Preview">
+                    </div>
+                    
+                    <label for="imageUpload" class="block text-sm font-medium text-gray-700 mb-2">Select Image File:</label>
+                    <input type="file" id="imageUpload" accept="image/jpeg, image/png" class="block w-full text-sm text-gray-900 border border-gray-300 rounded-lg cursor-pointer bg-gray-50 p-2.5" onchange="handleFileChange()">
+                </section>
+
+                <!-- 2. Output Section (Restored) -->
+                <section>
+                    <h2 class="text-xl font-semibold mb-3 text-gemini-dark">Restored Photo</h2>
+                    <div id="restored-photo-frame" class="photo-frame rounded-xl mb-4 transition-all duration-300">
+                        <span id="restored-placeholder" class="text-gray-500 text-center p-4">
+                            The enhanced photo will appear here.
+                        </span>
+                        <img id="restored-image-preview" class="hidden max-w-full max-h-[350px] rounded-lg shadow-md" alt="Restored Photo Preview">
+                    </div>
+
+                    <!-- Loading Indicator -->
+                    <div id="loading" class="hidden flex items-center justify-center p-3 text-gemini-dark bg-blue-50 rounded-lg shadow-inner">
+                        <div class="loading-dots flex space-x-2">
+                            <div class="w-3 h-3 bg-gemini-blue rounded-full"></div>
+                            <div class="w-3 h-3 bg-gemini-blue rounded-full"></div>
+                            <div class="w-3 h-3 bg-gemini-blue rounded-full"></div>
+                        </div>
+                        <span class="ml-3 font-medium">AI is restoring and enhancing your memory...</span>
+                    </div>
+
+                </section>
+            </div>
+
+            <!-- 3. Action Buttons (Updated with Download Button) -->
+            <div class="mt-8 flex flex-col sm:flex-row justify-center space-y-4 sm:space-y-0 sm:space-x-4">
+                <button 
+                    id="restoreButton"
+                    onclick="restorePhoto()"
+                    disabled
+                    class="w-full sm:w-auto px-10 py-3 bg-gemini-blue text-white font-bold rounded-full text-lg shadow-lg hover:bg-blue-600 transition duration-150 ease-in-out disabled:bg-gray-400 disabled:shadow-none focus:outline-none focus:ring-4 focus:ring-blue-300"
+                >
+                    Restore & Color-Fix Photo
+                </button>
+                
+                <button 
+                    id="downloadButton"
+                    onclick="downloadRestoredPhoto()"
+                    disabled
+                    class="w-full sm:w-auto px-10 py-3 bg-green-500 text-white font-bold rounded-full text-lg shadow-lg hover:bg-green-600 transition duration-150 ease-in-out disabled:bg-gray-400 disabled:shadow-none focus:outline-none focus:ring-4 focus:ring-green-300"
+                >
+                    Download Restored Photo
+                </button>
+            </div>
+
+            <!-- Error Message Box -->
+            <div id="errorMessage" class="hidden mt-6 p-4 bg-red-100 border border-red-400 text-red-700 rounded-lg" role="alert">
+                <p class="font-bold">Error:</p>
+                <p id="errorText"></p>
+            </div>
+            
+        </div>
+    </div>
+
+    <script type="module">
+        // Global variables for API Key and Model
+        const apiKey = "";
+        const API_URL = `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image-preview:generateContent?key=${apiKey}`;
+
+        // DOM elements
+        const imageUpload = document.getElementById('imageUpload');
+        const originalImagePreview = document.getElementById('original-image-preview');
+        const originalPlaceholder = document.getElementById('original-placeholder');
+        const restoredImagePreview = document.getElementById('restored-image-preview');
+        const restoredPlaceholder = document.getElementById('restored-placeholder');
+        const restoreButton = document.getElementById('restoreButton');
+        const downloadButton = document.getElementById('downloadButton');
+        const loadingIndicator = document.getElementById('loading');
+        const errorMessageDiv = document.getElementById('errorMessage');
+        const errorText = document.getElementById('errorText');
+        
+        // --- Utility Functions ---
+
+        /**
+         * Converts a File object to a Base64 string.
+         * @param {File} file The file to convert.
+         * @returns {Promise<string>} A promise that resolves with the Base64 string (including data URL prefix).
+         */
+        function fileToBase64(file) {
+            return new Promise((resolve, reject) => {
+                const reader = new FileReader();
+                reader.readAsDataURL(file);
+                reader.onload = () => resolve(reader.result);
+                reader.onerror = error => reject(error);
+            });
+        }
+
+        /**
+         * Retries a function with exponential backoff.
+         * @param {Function} fn The function to execute.
+         * @param {number} maxRetries The maximum number of retries.
+         * @param {number} delay Initial delay in ms.
+         */
+        async function withExponentialBackoff(fn, maxRetries = 5, delay = 1000) {
+            for (let i = 0; i < maxRetries; i++) {
+                try {
+                    return await fn();
+                } catch (error) {
+                    if (i === maxRetries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay * (2 ** i)));
+                }
+            }
+        }
+
+        /**
+         * Clears any previous error message.
+         */
+        function clearError() {
+            errorMessageDiv.classList.add('hidden');
+            errorText.textContent = '';
+        }
+
+        /**
+         * Initiates the download of the restored image.
+         */
+        window.downloadRestoredPhoto = function() {
+            const imageSrc = restoredImagePreview.src;
+            if (imageSrc && imageSrc !== '') {
+                const link = document.createElement('a');
+                // The image source is a data URL (base64 image)
+                link.href = imageSrc; 
+                // Suggest a dynamic filename
+                link.download = 'restored-photo-' + Date.now() + '.png'; 
+                
+                // Programmatically click the link to start download
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+            }
+        };
+
+        // --- Core Application Logic ---
+
+        window.handleFileChange = function() {
+            const file = imageUpload.files[0];
+            if (file) {
+                clearError();
+                // Display input image preview
+                originalImagePreview.src = URL.createObjectURL(file);
+                originalImagePreview.classList.remove('hidden');
+                originalPlaceholder.classList.add('hidden');
+                
+                // Clear previous output and disable download button
+                restoredImagePreview.src = '';
+                restoredImagePreview.classList.add('hidden');
+                restoredPlaceholder.classList.remove('hidden');
+
+                restoreButton.disabled = false;
+                downloadButton.disabled = true; // Disable download when a new file is uploaded
+            } else {
+                originalImagePreview.classList.add('hidden');
+                originalPlaceholder.classList.remove('hidden');
+                restoreButton.disabled = true;
+                downloadButton.disabled = true;
+            }
+        };
+
+
+        window.restorePhoto = async function() {
+            const file = imageUpload.files[0];
+            if (!file) {
+                errorText.textContent = 'Please upload a photo first.';
+                errorMessageDiv.classList.remove('hidden');
+                return;
+            }
+            
+            clearError();
+            restoreButton.disabled = true;
+            downloadButton.disabled = true; // Ensure download is disabled while processing
+            loadingIndicator.classList.remove('hidden');
+            restoredPlaceholder.classList.add('hidden');
+            restoredImagePreview.classList.add('hidden');
+
+            try {
+                const base64ImageData = await fileToBase64(file);
+                // Extract only the base64 part (after the comma)
+                const base64Data = base64ImageData.split(',')[1];
+
+                const userPrompt = "Restore the uploaded old or blurry photo, enhancing clarity, fixing defects like scratches or noise, and color-correcting it to make it look sharp, realistic, and vibrant. Focus on facial features if present.";
+                
+                const payload = {
+                    contents: [{
+                        parts: [
+                            { text: userPrompt }, 
+                            {
+                                inlineData: {
+                                    mimeType: file.type,
+                                    data: base64Data
+                                }
+                            }
+                        ]
+                    }],
+                    generationConfig: {
+                        responseModalities: ['IMAGE']
+                    },
+                };
+
+                const fetchFn = async () => {
+                    const response = await fetch(API_URL, {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify(payload)
+                    });
+
+                    if (!response.ok) {
+                        const errorBody = await response.json();
+                        console.error('API Error Response:', errorBody);
+                        throw new Error(`API request failed with status ${response.status}: ${errorBody.error?.message || 'Unknown error'}`);
+                    }
+
+                    return response.json();
+                };
+
+                const result = await withExponentialBackoff(fetchFn);
+                
+                const base64Image = result?.candidates?.[0]?.content?.parts?.find(p => p.inlineData)?.inlineData?.data;
+
+                if (base64Image) {
+                    const imageUrl = `data:image/png;base64,${base64Image}`;
+                    restoredImagePreview.src = imageUrl;
+                    restoredImagePreview.classList.remove('hidden');
+                    downloadButton.disabled = false; // Enable download on success!
+                } else {
+                    throw new Error("AI did not return a valid image.");
+                }
+
+            } catch (error) {
+                console.error("Restoration failed:", error);
+                errorText.textContent = `Could not process photo: ${error.message}`;
+                errorMessageDiv.classList.remove('hidden');
+                restoredPlaceholder.classList.remove('hidden'); // Show placeholder on error
+            } finally {
+                loadingIndicator.classList.add('hidden');
+                restoreButton.disabled = false;
+            }
+        };
+
+        // Initialize App
+        window.onload = function() {
+            // Check if any file is pre-selected on load
+            if (!imageUpload.files[0]) {
+                restoreButton.disabled = true;
+                downloadButton.disabled = true;
+            }
+        }
+    </script>
+</body>
+</html>
+
